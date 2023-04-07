@@ -2,19 +2,53 @@ import random
 from fine_tune import ImageFilelist
 import torch
 import os
+import mysql.connector
 from torchvision import transforms
 
 
-def loaders_from_imlist():
+def get_images_names_from_sql(fine_tune_by: dict):
+    host_db_uri = 'freedriftlogdb.chgu9pxp8lci.us-east-1.rds.amazonaws.com'
+
+    cnx = mysql.connector.connect(user='admin', password='nadernader',
+                                  host=host_db_uri,
+                                  database='drift_log_schema')
+
+    # can be change to drifted_query = "" in case we want to tune on all images with atts.
+    drifted_query = "counter_drift = 1"
+    for key in fine_tune_by.keys():
+        if drifted_query == "":
+            drifted_query += key + " = '" + fine_tune_by[key] + "'"
+        else:
+            drifted_query += " AND " + key + " = '" + fine_tune_by[key] + "'"
+
+    cursor = cnx.cursor()
+    cursor.execute(
+        "SELECT img_url FROM drift_log_schema.drift_log_flex where " + drifted_query)
+    res = cursor.fetchall()
+
+    cursor.close()
+    cnx.close()
+
+    img_list = []
+    for item in res:
+        img_list.append(item[0])
+
+    return img_list
+
+
+def loaders_from_imlist(fine_tune_by: dict):
     batch_size = 128
     num_workers = 4
 
-    # TODO: change with images from DB with cause and drift...
     root = os.path.join(".", 'images')
-    imlist = ['2020-01-02-uk_0-n02206856-0.png',
-              '2020-01-02-uk_3-n02206856-1.png',
-              '2020-01-02-uk_5-n02206856-1.png',
-              '2020-01-02-uk_6-n01665541-2.png']
+    #
+    # imlist = ['images_simulation/2020-01-01-bj_0-n02018795-0.png',
+    #           'images_simulation/2020-01-01-bj_0-n02018795-1.png',
+    #           'images_simulation/2020-01-01-bj_0-n02018795-2.png',
+    #           'images_simulation/2020-01-01-bj_10-n01443537-2.png']
+
+    imlist = get_images_names_from_sql(fine_tune_by)
+
     split = {'train': 0.7, 'val': 0.3}
     data_transforms = {
         'train': transforms.Compose([

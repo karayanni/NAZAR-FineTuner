@@ -4,6 +4,14 @@ import torch
 import boto3
 
 
+class MyDataParallel(nn.DataParallel):
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+
 def get_original_model_from_s3(device):
     # Create an S3 client
     s3 = boto3.client('s3')
@@ -33,6 +41,10 @@ def get_original_model_from_s3(device):
         model.fc = nn.Linear(2048, 201)
         model.load_state_dict(
             {k.replace('.layer.', '.'): v for k, v in checkpoint.items()})
+
+    if torch.cuda.device_count() > 1:
+        model = MyDataParallel(model)
+
     return model.to(device).eval()
 
 

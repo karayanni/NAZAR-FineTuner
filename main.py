@@ -10,6 +10,7 @@ from torchvision import transforms
 from Utils import loaders_from_imlist
 from s3utils import get_original_model_from_s3, upload_new_model_to_s3
 from flask import Flask, jsonify, request
+import time
 
 app = Flask("nazar-finetuner")
 
@@ -41,10 +42,10 @@ def fine_tune(fine_tune_by: dict):
 
     # model = load_model(model_type="resnet50", checkpoint_path='model.pt', device=gpu_device)
 
-    ds = get_ds()
-    cls_pred = []
-    drift = []
-    model_ids = []
+    # ds = get_ds()
+    # cls_pred = []
+    # drift = []
+    # model_ids = []
 
     # this below is only for getting the fine-tuning plan...
     #
@@ -110,7 +111,7 @@ def fine_tune(fine_tune_by: dict):
                         'mode': 'tent'
                         }
 
-    ds_loader = loaders_from_imlist()
+    ds_loader = loaders_from_imlist(fine_tune_by)
 
     tmp_model = train_model(tmp_model, ds_loader, train_parameters=train_parameters, verbose=True).eval()
 
@@ -140,4 +141,16 @@ def hello_world():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0')
+    test_locally = True
+
+    if test_locally:
+        start_time = time.time()
+
+        fine_tune({'weather': 'rain', 'location': 'United Kingdom'})
+
+        end_time = time.time()
+
+        time_taken = end_time - start_time
+        print(f"FineTuning Done. Time taken: {time_taken:.2f} seconds")
+    else:
+        app.run(host='0.0.0.0')

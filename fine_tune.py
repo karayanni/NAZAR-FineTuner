@@ -2,13 +2,15 @@ import os
 import torch
 import torchvision.models as models
 import numpy as np
-from torch import nn
 import torch.utils.data as data
 import re
-from PIL import Image
-from copy import deepcopy
+import boto3
 import time
+from PIL import Image
+from torch import nn
 from tqdm import tqdm
+from io import BytesIO
+from copy import deepcopy
 
 
 class_to_idx = {"n01440764": 0, "n01443537": 1, "n01484850": 2, "n01491361": 3, "n01494475": 4, "n01496331": 5,
@@ -149,8 +151,17 @@ class ImageFilelist(data.Dataset):
         self.labeler = labeler
 
     def __getitem__(self, index):
-        impath, label = self.imlist[index], self.labeler(self.imlist[index])
-        img = Image.open(os.path.join(self.root, impath)).convert("RGB")
+        s3_path = self.imlist[index]
+
+        img_name_for_label = s3_path.split('/', 1)[-1]
+        label = self.labeler(img_name_for_label)
+
+        s3 = boto3.client('s3')
+        bucket_name = 'nazar-images'
+        image_content = s3.get_object(Bucket=bucket_name, Key=s3_path)['Body'].read()
+        img = Image.open(BytesIO(image_content))
+
+        # img = Image.open(os.path.join(self.root, impath)).convert("RGB")
         if self.transform is not None:
             img = self.transform(img)
         return torch.Tensor(img), label
@@ -207,20 +218,9 @@ def train_model(model, dataloader, train_parameters, verbose=False):
             train_parameters['num_epochs'], train_parameters['early_stopping'], train_parameters['mode']
     assert mode in ['fine-tune', 'tent', 'tent_fc', 'tent_all', 'soft-pseudo-label', 'hard-pseudo-label', 'memo']
 
-    if mode == 'fine-tune':
-        best_score = 0.0
-    else:
-        label_amount, alpha = train_parameters['label_amount'], train_parameters['alpha']
-        best_score = np.Inf
-
-    if mode == 'tent_fc':
-        w0 = deepcopy(model.fc.weight)
-    if mode == 'tent_all':
-        model_w0 = {}
-        for nm, m in deepcopy(model).named_modules():
-            for np_, p in m.named_parameters():
-                if np_ in ['weight']:
-                    model_w0[f"{nm}.{np_}"] = p
+    # we only use TENT in cloud, if to add support for other methods need to separate the below.
+    label_amount, alpha = train_parameters['label_amount'], train_parameters['alpha']
+    best_score = np.Inf
 
     device = next(model.parameters()).device
     dataset_sizes = {x: dataloader[x].dataset.size for x in ['train', 'val']}
